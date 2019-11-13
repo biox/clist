@@ -1,0 +1,560 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"database/sql"
+	"flag"
+	"fmt"
+	"git.cyberia.club/cyberia-services/clist/mail"
+	_ "github.com/mattn/go-sqlite3"
+	"gopkg.in/ini.v1"
+	"io"
+	"log"
+	"net/mail"
+	"net/smtp"
+	"os"
+	"strings"
+	"time"
+)
+
+type Config struct {
+	CommandAddress string `ini:"command_address"`
+	Log            string `ini:"log"`
+	Database       string `ini:"database"`
+	SMTPHostname   string `ini:"smtp_hostname"`
+	SMTPPort       string `ini:"smtp_port"`
+	SMTPUsername   string `ini:"smtp_username"`
+	SMTPPassword   string `ini:"smtp_password"`
+	Lists          map[string]*List
+	Debug          bool
+	ConfigFile     string
+}
+
+type List struct {
+	Name            string `ini:"name"`
+	Archive         string `ini:"archive"`
+	Owner           string `ini:"owner"`
+	Description     string `ini:"description"`
+	Id              string
+	Address         string   `ini:"address"`
+	Hidden          bool     `ini:"hidden"`
+	SubscribersOnly bool     `ini:"subscribers_only"`
+	Posters         []string `ini:"posters,omitempty"`
+	Bcc             []string `ini:"bcc,omitempty"`
+}
+
+var gConfig *Config
+
+// Entry point
+func main() {
+	gConfig = &Config{}
+
+	flag.StringVar(&gConfig.ConfigFile, "config", "", "Load configuration from specified file")
+	flag.Parse()
+
+	loadConfig()
+
+	if len(flag.Args()) < 1 {
+		fmt.Printf("Error: Command not specified\n")
+		os.Exit(1)
+	}
+
+	requireLog()
+
+	if flag.Arg(0) == "message" {
+		msg := email.NewEmail()
+		msg, err := email.NewEmailFromReader(bufio.NewReader(os.Stdin))
+		if err != nil {
+			log.Printf("ERROR_PARSING_MESSAGE Error=%q\n", err.Error())
+			os.Exit(0)
+		}
+		log.Printf("MESSAGE_RECEIVED From=%q To=%q Cc=%q Bcc=%q Subject=%q\n",
+			msg.From, msg.To, msg.Cc, msg.Bcc, msg.Subject)
+		handleMessage(msg)
+	} else {
+		fmt.Printf("Unknown command %s\n", flag.Arg(0))
+	}
+}
+
+func checkAddress(addrs []string, checkAddr string) bool {
+	for _, to := range addrs {
+		t, _ := mail.ParseAddress(to)
+		if t.Address == checkAddr {
+			return true
+		}
+	}
+	return false
+}
+
+// Figure out if this is a command, or a mailing list post
+func handleMessage(msg *email.Email) {
+	if checkAddress(msg.To, gConfig.CommandAddress) {
+		handleCommand(msg)
+	} else {
+		matchedLists := []*List{}
+		for _, l := range gConfig.Lists {
+			agg := append(msg.To, msg.Cc...)
+			if checkAddress(agg, l.Address) {
+				matchedLists = append(matchedLists, l)
+			}
+		}
+
+		log.Printf("matchedLists: %q", matchedLists)
+		if len(matchedLists) == 1 {
+			list := matchedLists[0]
+			if list.CanPost(msg.From) {
+				msg := buildListEmail(msg, list)
+				send(msg)
+				log.Printf("MESSAGE_SENT ListId=%q",
+					list.Id)
+			} else {
+				handleNotAuthorisedToPost(msg)
+			}
+		} else {
+			log.Printf("LISTS: %q", msg)
+			handleNoDestination(msg)
+		}
+	}
+}
+
+// Handle the command given by the user
+func handleCommand(msg *email.Email) {
+	if msg.Subject == "lists" {
+		handleShowLists(msg)
+	} else if msg.Subject == "help" {
+		handleHelp(msg)
+	} else if strings.HasPrefix(msg.Subject, "subscribe") {
+		handleSubscribe(msg)
+	} else if strings.HasPrefix(msg.Subject, "unsubscribe") {
+		handleUnsubscribe(msg)
+	} else {
+		handleUnknownCommand(msg)
+	}
+}
+
+// Reply to a message that has nowhere to go
+func handleNoDestination(msg *email.Email) {
+	reply := reply(msg)
+	reply.From = gConfig.CommandAddress
+	reply.Text = []byte("No mailing lists addressed. Your message has not been delivered.\r\n")
+	send(reply)
+	log.Printf("UNKNOWN_DESTINATION From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
+}
+
+// Reply that the user isn't authorised to post to the list
+func handleNotAuthorisedToPost(msg *email.Email) {
+	reply := reply(msg)
+	reply.From = gConfig.CommandAddress
+	reply.Text = []byte("You are not an approved poster for this mailing list. Your message has not been delivered.\r\n")
+	send(reply)
+	log.Printf("UNAUTHORISED_POST From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
+}
+
+// Reply to an unknown command, giving some help
+func handleUnknownCommand(msg *email.Email) {
+	reply := reply(msg)
+	reply.From = gConfig.CommandAddress
+	reply.Text = []byte(fmt.Sprintf(
+		"%s is not a valid command.\r\n\r\n"+
+			"Valid commands are:\r\n\r\n"+
+			commandInfo(),
+		msg.Subject))
+	send(reply)
+	log.Printf("UNKNOWN_COMMAND From=%q", msg.From)
+}
+
+// Reply to a help command with help information
+func handleHelp(msg *email.Email) {
+	var body bytes.Buffer
+	fmt.Fprintf(&body, commandInfo())
+	reply := reply(msg)
+	reply.From = gConfig.CommandAddress
+	reply.Text = []byte(body.String())
+	send(reply)
+	log.Printf("HELP_SENT To=%q", reply.To)
+}
+
+// Reply to a show mailing lists command with a list of mailing lists
+func handleShowLists(msg *email.Email) {
+	log.Printf("HANDLEHSOWLISTS")
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "Available mailing lists\r\n")
+	fmt.Fprintf(&body, "-----------------------\r\n\r\n")
+	for _, list := range gConfig.Lists {
+		if !list.Hidden {
+			fmt.Fprintf(&body,
+				"%s\r\n============\r\n"+
+					"%s\r\n\r\n",
+				list.Id, list.Description)
+		}
+	}
+
+	log.Printf("SEND")
+	fmt.Fprintf(&body,
+		"\r\nTo subscribe to a mailing list, email %s with 'subscribe <list-id>' as the subject.\r\n",
+		gConfig.CommandAddress)
+
+	log.Printf("SEND")
+	reply := reply(msg)
+	log.Printf("SEND")
+	reply.From = gConfig.CommandAddress
+	log.Printf("SEND")
+	reply.Text = []byte(body.String())
+	log.Printf("SEND")
+	send(reply)
+	log.Printf("LIST_SENT To=%q", reply.To)
+}
+
+// Handle a subscribe command
+func handleSubscribe(msg *email.Email) {
+	listId := strings.TrimPrefix(msg.Subject, "subscribe ")
+	list := List{}
+
+	// Switch to id - in case we were passed address
+	listId = list.Id
+
+	if isSubscribed(msg.From, listId) {
+		reply := reply(msg)
+		reply.From = gConfig.CommandAddress
+		reply.Text = []byte(fmt.Sprintf("You are already subscribed to %s\r\n", listId))
+		send(reply)
+		log.Printf("DUPLICATE_SUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
+		os.Exit(0)
+	}
+
+	addSubscription(msg.From, listId)
+	reply := reply(msg)
+	reply.Text = []byte(fmt.Sprintf("You are now subscribed to %s\r\n", listId))
+	send(reply)
+}
+
+// Handle an unsubscribe command
+func handleUnsubscribe(msg *email.Email) {
+	listId := strings.TrimPrefix(msg.Subject, "unsubscribe ")
+	list := List{} //lookupList(listId)
+
+	// Switch to id - in case we were passed address
+	listId = list.Id
+
+	if !isSubscribed(msg.From, listId) {
+		reply := reply(msg)
+		reply.Text = []byte(fmt.Sprintf("You aren't subscribed to %s\r\n", listId))
+		send(reply)
+		log.Printf("DUPLICATE_UNSUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
+		os.Exit(0)
+	}
+
+	removeSubscription(msg.From, listId)
+	reply := reply(msg)
+	reply.Text = []byte(fmt.Sprintf("You are now unsubscribed from %s\r\n", listId))
+	send(reply)
+}
+
+// Create a new message that replies to this message
+func reply(msg *email.Email) *email.Email {
+	reply := email.NewEmail()
+	reply.Subject = "Re: " + msg.Subject
+	reply.From = msg.To[0]
+	reply.To = []string{msg.From}
+	reply.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
+	return reply
+}
+
+func badAddress(a string, list []string) bool {
+	for _, l := range list {
+		if l == a {
+			return true
+		}
+	}
+	return false
+}
+
+func buildListEmail(e *email.Email, l *List) *email.Email {
+	addresses := []string{}
+	m, _ := mail.ParseAddress(e.From)
+	addresses = append(addresses, m.Address)
+	for _, list := range gConfig.Lists {
+		addresses = append(addresses, list.Address)
+	}
+
+	cc := []string{}
+	recipients := []string{}
+
+	for _, a := range e.Cc {
+		if !badAddress(a, addresses) {
+			cc = append(cc, a)
+		}
+	}
+
+	for _, a := range fetchSubscribers(l.Id) {
+		if !badAddress(a, addresses) {
+			recipients = append(recipients, a)
+		}
+	}
+
+	// Copy the message
+	// Add headers
+	// Return the new message
+	newEmail := email.NewEmail()
+	newEmail.Sender = l.Address
+	newEmail.From = getNameOrAddress(e.From) + "<" + l.Address + ">"
+	newEmail.To = []string{l.Name + "<" + l.Address + ">"}
+	newEmail.Cc = cc
+	newEmail.Recipients = recipients
+	newEmail.Subject = e.Subject
+	newEmail.Text = e.Text
+	newEmail.Headers["Date"] = e.Headers["Date"]
+	newEmail.Headers["Reply-To"] = []string{e.From}
+	newEmail.Headers["Precedence"] = []string{"list"}
+	newEmail.Headers["List-Id"] = []string{"<" + l.Id + ">"}
+	newEmail.Headers["List-Post"] = []string{"<mailto:" + l.Address + ">"}
+	newEmail.Headers["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
+	newEmail.Headers["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe>"}
+	newEmail.Headers["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe>"}
+	newEmail.Headers["List-Archive"] = []string{"<" + l.Archive + ">"}
+	newEmail.Headers["List-Owner"] = []string{"<" + l.Owner + ">"}
+	return newEmail
+}
+
+func getNameOrAddress(a string) string {
+	r, err := mail.ParseAddress(a)
+	if err != nil {
+		log.Printf("couldn't parse from address")
+		return ""
+	}
+	if r.Name != "" {
+		return r.Name
+	}
+	return r.Address
+}
+
+func send(e *email.Email) {
+	log.Printf("MESSAGE:\n")
+	log.Printf("%q\n", e)
+	e.Send("mail.c3f.net:587", smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net"))
+	//for _, r := range recipients {
+	//	sender, _ := mail.ParseAddress(msg.From)
+	//	if sender.Address != r {
+	//		msg.Bcc = append(msg.Bcc, r)
+	//	}
+	//	}
+}
+
+// MAILING LIST LOGIC /////////////////////////////////////////////////////////
+
+// Check if the user is authorised to post to this mailing list
+func (list *List) CanPost(from string) bool {
+
+	// Is this list restricted to subscribers only?
+	if list.SubscribersOnly && !isSubscribed(from, list.Id) {
+		return false
+	}
+
+	// Is there a whitelist of approved posters?
+	if len(list.Posters) > 0 {
+		for _, poster := range list.Posters {
+			if from == poster {
+				return true
+			}
+		}
+		return false
+	}
+
+	return true
+}
+
+// DATABASE LOGIC /////////////////////////////////////////////////////////////
+
+// Open the database
+func openDB() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", gConfig.Database)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS "subscriptions" (
+		"list" TEXT,
+		"user" TEXT
+	);
+	`)
+
+	return db, err
+}
+
+// Open the database or fail immediately
+func requireDB() *sql.DB {
+	db, err := openDB()
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(1)
+	}
+	return db
+}
+
+// Fetch list of subscribers to a mailing list from database
+func fetchSubscribers(listId string) []string {
+	db := requireDB()
+	rows, err := db.Query("SELECT user FROM subscriptions WHERE list=?", listId)
+
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	listIds := []string{}
+	defer rows.Close()
+	for rows.Next() {
+		var user string
+		rows.Scan(&user)
+		listIds = append(listIds, user)
+	}
+
+	return listIds
+}
+
+// Check if a user is subscribed to a mailing list
+func isSubscribed(user string, list string) bool {
+	addressObj, err := mail.ParseAddress(user)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+	db := requireDB()
+
+	exists := false
+	err = db.QueryRow("SELECT 1 FROM subscriptions WHERE user=? AND list=?", addressObj.Address, list).Scan(&exists)
+
+	if err == sql.ErrNoRows {
+		return false
+	} else if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	return true
+}
+
+// Add a subscription to the subscription database
+func addSubscription(user string, list string) {
+	addressObj, err := mail.ParseAddress(user)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	db := requireDB()
+	_, err = db.Exec("INSERT INTO subscriptions (user,list) VALUES(?,?)", addressObj.Address, list)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+	log.Printf("SUBSCRIPTION_ADDED User=%q List=%q\n", user, list)
+}
+
+// Remove a subscription from the subscription database
+func removeSubscription(user string, list string) {
+	addressObj, err := mail.ParseAddress(user)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	db := requireDB()
+	_, err = db.Exec("DELETE FROM subscriptions WHERE user=? AND list=?", addressObj.Address, list)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+	log.Printf("SUBSCRIPTION_REMOVED User=%q List=%q\n", user, list)
+}
+
+// Remove all subscriptions from a given mailing list
+func clearSubscriptions(list string) {
+	db := requireDB()
+	_, err := db.Exec("DELETE FROM subscriptions WHERE AND list=?", list)
+	if err != nil {
+		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+}
+
+// HELPER FUNCTIONS ///////////////////////////////////////////////////////////
+
+// Open the log file for logging
+func openLog() error {
+	logFile, err := os.OpenFile(gConfig.Log, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	out := io.MultiWriter(logFile, os.Stderr)
+	log.SetOutput(out)
+	return nil
+}
+
+// Open the log, or fail immediately
+func requireLog() {
+	err := openLog()
+	if err != nil {
+		log.Printf("LOG_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+}
+
+// Load gConfig from the on-disk config file
+func loadConfig() {
+	var (
+		err error
+		cfg *ini.File
+	)
+
+	if len(gConfig.ConfigFile) > 0 {
+		cfg, err = ini.Load(gConfig.ConfigFile)
+	} else {
+		cfg, err = ini.LooseLoad("nanolist.ini", "/usr/local/etc/nanolist.ini", "/etc/nanolist.ini")
+	}
+
+	if err != nil {
+		log.Printf("CONFIG_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	err = cfg.Section("").MapTo(gConfig)
+	if err != nil {
+		log.Printf("CONFIG_ERROR Error=%q\n", err.Error())
+		os.Exit(0)
+	}
+
+	gConfig.Lists = make(map[string]*List)
+
+	for _, section := range cfg.ChildSections("list") {
+		list := &List{}
+		err = section.MapTo(list)
+		if err != nil {
+			log.Printf("CONFIG_ERROR Error=%q\n", err.Error())
+			os.Exit(0)
+		}
+		list.Id = strings.TrimPrefix(section.Name(), "list.")
+		gConfig.Lists[list.Address] = list
+	}
+}
+
+// Generate an email-able list of commands
+func commandInfo() string {
+	return fmt.Sprintf("    help\r\n"+
+		"      Information about valid commands\r\n"+
+		"\r\n"+
+		"    list\r\n"+
+		"      Retrieve a list of available mailing lists\r\n"+
+		"\r\n"+
+		"    subscribe <list-id>\r\n"+
+		"      Subscribe to <list-id>\r\n"+
+		"\r\n"+
+		"    unsubscribe <list-id>\r\n"+
+		"      Unsubscribe from <list-id>\r\n"+
+		"\r\n"+
+		"To send a command, email %s with the command as the subject.\r\n",
+		gConfig.CommandAddress)
+}
