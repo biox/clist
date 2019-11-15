@@ -304,7 +304,7 @@ func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
 	email.From = "<" + gConfig.CommandAddress + ">"
 	email.To = []string{from.Name + "<" + from.Address + ">"}
 	email.Recipients = []string{from.Address}
-	email.Subject = e.Subject
+	email.Subject = "RE: " + e.Subject
 	email.Text = []byte(t.String())
 	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
 	email.Headers["Precedence"] = []string{"list"}
