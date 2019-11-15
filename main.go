@@ -14,6 +14,7 @@ import (
 	"net/mail"
 	"net/smtp"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -118,17 +119,44 @@ func handleMessage(msg *email.Email) {
 	}
 }
 
+func subjectParser(s string) string {
+	var subject string
+
+	re := regexp.MustCompile(`[Ll]s|[Ll]ists?`)
+	if re.MatchString(s) {
+		subject = "ls"
+	}
+
+	re = regexp.MustCompile(`[Hh]elp`)
+	if re.MatchString(s) {
+		subject = "help"
+	}
+
+	re = regexp.MustCompile(`[Ss]ubscribe `)
+	if re.MatchString(s) {
+		subject = "subscribe"
+	}
+
+	re = regexp.MustCompile(`[Uu]nsubscribe `)
+	if re.MatchString(s) {
+		subject = "unsubscribe"
+	}
+
+	return subject
+}
+
 // Handle the command given by the user
 func handleCommand(msg *email.Email) {
-	if msg.Subject == "lists" {
+	switch subjectParser(msg.Subject) {
+	case "ls":
 		handleShowLists(msg)
-	} else if msg.Subject == "help" {
+	case "help":
 		handleHelp(msg)
-	} else if strings.HasPrefix(msg.Subject, "subscribe") {
+	case "subscribe":
 		handleSubscribe(msg)
-	} else if strings.HasPrefix(msg.Subject, "unsubscribe") {
+	case "unsubscribe":
 		handleUnsubscribe(msg)
-	} else {
+	default:
 		handleUnknownCommand(msg)
 	}
 }
