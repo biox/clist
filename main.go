@@ -124,7 +124,7 @@ func subjectParser(s string) string {
 
 	re := regexp.MustCompile(`[Ll]s|[Ll]ists?`)
 	if re.MatchString(s) {
-		subject = "ls"
+		subject = "lists"
 	}
 
 	re = regexp.MustCompile(`[Hh]elp`)
@@ -148,7 +148,7 @@ func subjectParser(s string) string {
 // Handle the command given by the user
 func handleCommand(msg *email.Email) {
 	switch subjectParser(msg.Subject) {
-	case "ls":
+	case "lists":
 		handleShowLists(msg)
 	case "help":
 		handleHelp(msg)
@@ -203,7 +203,6 @@ func handleHelp(msg *email.Email) {
 
 // Reply to a show mailing lists command with a list of mailing lists
 func handleShowLists(msg *email.Email) {
-	log.Printf("HANDLEHSOWLISTS")
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "Available mailing lists\r\n")
 	fmt.Fprintf(&body, "-----------------------\r\n\r\n")
@@ -229,11 +228,14 @@ func handleShowLists(msg *email.Email) {
 
 // Handle a subscribe command
 func handleSubscribe(msg *email.Email) {
-	listId := strings.TrimPrefix(msg.Subject, "subscribe ")
-	list := List{}
+	listId := strings.TrimPrefix(msg.Subject, "Subscribe ")
+	listId = strings.TrimPrefix(msg.Subject, "subscribe ")
+	list := lookupList(listId)
 
-	// Switch to id - in case we were passed address
-	listId = list.Id
+	if list == nil {
+		handleInvalidRequest(msg, list.Id)
+		os.Exit(0)
+	}
 
 	var body bytes.Buffer
 	if isSubscribed(msg.From, listId) {
@@ -249,11 +251,14 @@ func handleSubscribe(msg *email.Email) {
 
 // Handle an unsubscribe command
 func handleUnsubscribe(msg *email.Email) {
-	listId := strings.TrimPrefix(msg.Subject, "unsubscribe ")
-	list := List{} //lookupList(listId)
+	listId := strings.TrimPrefix(msg.Subject, "Unsubscribe ")
+	listId = strings.TrimPrefix(msg.Subject, "unsubscribe ")
+	list := lookupList(listId)
 
-	// Switch to id - in case we were passed address
-	listId = list.Id
+	if list == nil {
+		handleInvalidRequest(msg, list.Id)
+		os.Exit(0)
+	}
 
 	var body bytes.Buffer
 	if !isSubscribed(msg.From, listId) {
@@ -265,6 +270,14 @@ func handleUnsubscribe(msg *email.Email) {
 	}
 	reply := buildCommandEmail(msg, body)
 	send(reply)
+}
+
+func handleInvalidRequest(msg *email.Email, listId string) {
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "Unable to operate against %s, Invalid mailing list ID.\r\n", listId)
+	reply := buildCommandEmail(msg, body)
+	send(reply)
+	log.Printf("INVALID_MAILING_LIST From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
 }
 
 func badAddress(a string, list []string) bool {
@@ -293,6 +306,15 @@ func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
 	email.Headers["Precedence"] = []string{"list"}
 	email.Headers["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
 	return email
+}
+
+func lookupList(l string) *List {
+	for _, list := range gConfig.Lists {
+		if l == list.Id {
+			return list
+		}
+	}
+	return nil
 }
 
 func buildListEmail(e *email.Email, l *List) *email.Email {
@@ -358,12 +380,6 @@ func send(e *email.Email) {
 	log.Printf("MESSAGE:\n")
 	log.Printf("%q\n", e)
 	e.Send("mail.c3f.net:587", smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net"))
-	//for _, r := range recipients {
-	//	sender, _ := mail.ParseAddress(msg.From)
-	//	if sender.Address != r {
-	//		msg.Bcc = append(msg.Bcc, r)
-	//	}
-	//	}
 }
 
 // MAILING LIST LOGIC /////////////////////////////////////////////////////////
