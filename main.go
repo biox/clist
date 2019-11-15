@@ -266,11 +266,16 @@ func badAddress(a string, list []string) bool {
 }
 
 func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
+	from, err := mail.ParseAddress(e.From)
+	if err != nil {
+		log.Printf("WARN: CommandEmail: couldn't parse from address")
+	}
+
 	email := email.NewEmail()
 	email.Sender = gConfig.CommandAddress
 	email.From = "<" + gConfig.CommandAddress + ">"
-	email.To = []string{e.From}
-	email.Recipients = []string{e.From}
+	email.To = []string{from.Name + "<" + from.Address + ">"}
+	email.Recipients = []string{from.Address}
 	email.Subject = e.Subject
 	email.Text = []byte(t.String())
 	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
