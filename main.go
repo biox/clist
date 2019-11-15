@@ -163,31 +163,31 @@ func handleCommand(msg *email.Email) {
 
 // Reply to a message that has nowhere to go
 func handleNoDestination(msg *email.Email) {
-	reply := reply(msg)
-	reply.From = gConfig.CommandAddress
-	reply.Text = []byte("No mailing lists addressed. Your message has not been delivered.\r\n")
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "No mailing lists addressed. Your message has not been delivered.\r\n")
+	reply := buildCommandEmail(msg, body)
 	send(reply)
 	log.Printf("UNKNOWN_DESTINATION From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
 }
 
 // Reply that the user isn't authorised to post to the list
 func handleNotAuthorisedToPost(msg *email.Email) {
-	reply := reply(msg)
-	reply.From = gConfig.CommandAddress
-	reply.Text = []byte("You are not an approved poster for this mailing list. Your message has not been delivered.\r\n")
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "You are not an approved poster for this mailing list. Your message has not been delivered.\r\n")
+	reply := buildCommandEmail(msg, body)
 	send(reply)
 	log.Printf("UNAUTHORISED_POST From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
 }
 
 // Reply to an unknown command, giving some help
 func handleUnknownCommand(msg *email.Email) {
-	reply := reply(msg)
-	reply.From = gConfig.CommandAddress
-	reply.Text = []byte(fmt.Sprintf(
+	var body bytes.Buffer
+	fmt.Fprintf(&body,
 		"%s is not a valid command.\r\n\r\n"+
 			"Valid commands are:\r\n\r\n"+
 			commandInfo(),
-		msg.Subject))
+		msg.Subject)
+	reply := buildCommandEmail(msg, body)
 	send(reply)
 	log.Printf("UNKNOWN_COMMAND From=%q", msg.From)
 }
@@ -196,9 +196,7 @@ func handleUnknownCommand(msg *email.Email) {
 func handleHelp(msg *email.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, commandInfo())
-	reply := reply(msg)
-	reply.From = gConfig.CommandAddress
-	reply.Text = []byte(body.String())
+	reply := buildCommandEmail(msg, body)
 	send(reply)
 	log.Printf("HELP_SENT To=%q", reply.To)
 }
@@ -237,18 +235,15 @@ func handleSubscribe(msg *email.Email) {
 	// Switch to id - in case we were passed address
 	listId = list.Id
 
+	var body bytes.Buffer
 	if isSubscribed(msg.From, listId) {
-		reply := reply(msg)
-		reply.From = gConfig.CommandAddress
-		reply.Text = []byte(fmt.Sprintf("You are already subscribed to %s\r\n", listId))
-		send(reply)
+		fmt.Fprintf(&body, "You are already subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_SUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
-		os.Exit(0)
+	} else {
+		addSubscription(msg.From, listId)
+		fmt.Fprintf(&body, "You are now subscribed to %s\r\n", listId)
 	}
-
-	addSubscription(msg.From, listId)
-	reply := reply(msg)
-	reply.Text = []byte(fmt.Sprintf("You are now subscribed to %s\r\n", listId))
+	reply := buildCommandEmail(msg, body)
 	send(reply)
 }
 
@@ -260,28 +255,16 @@ func handleUnsubscribe(msg *email.Email) {
 	// Switch to id - in case we were passed address
 	listId = list.Id
 
+	var body bytes.Buffer
 	if !isSubscribed(msg.From, listId) {
-		reply := reply(msg)
-		reply.Text = []byte(fmt.Sprintf("You aren't subscribed to %s\r\n", listId))
-		send(reply)
+		fmt.Fprintf(&body, "You aren't subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_UNSUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
-		os.Exit(0)
+	} else {
+		removeSubscription(msg.From, listId)
+		fmt.Fprintf(&body, "You are now unsubscribed from %s\r\n", listId)
 	}
-
-	removeSubscription(msg.From, listId)
-	reply := reply(msg)
-	reply.Text = []byte(fmt.Sprintf("You are now unsubscribed from %s\r\n", listId))
+	reply := buildCommandEmail(msg, body)
 	send(reply)
-}
-
-// Create a new message that replies to this message
-func reply(msg *email.Email) *email.Email {
-	reply := email.NewEmail()
-	reply.Subject = "Re: " + msg.Subject
-	reply.From = msg.To[0]
-	reply.To = []string{msg.From}
-	reply.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
-	return reply
 }
 
 func badAddress(a string, list []string) bool {
@@ -304,7 +287,7 @@ func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
 	email.From = "<" + gConfig.CommandAddress + ">"
 	email.To = []string{from.Name + "<" + from.Address + ">"}
 	email.Recipients = []string{from.Address}
-	email.Subject = "RE: " + e.Subject
+	email.Subject = "Re: " + e.Subject
 	email.Text = []byte(t.String())
 	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
 	email.Headers["Precedence"] = []string{"list"}
