@@ -229,11 +229,11 @@ func handleShowLists(msg *email.Email) {
 // Handle a subscribe command
 func handleSubscribe(msg *email.Email) {
 	listId := strings.TrimPrefix(msg.Subject, "Subscribe ")
-	listId = strings.TrimPrefix(msg.Subject, "subscribe ")
+	listId = strings.TrimPrefix(listId, "subscribe ")
 	list := lookupList(listId)
 
 	if list == nil {
-		handleInvalidRequest(msg, list.Id)
+		handleInvalidRequest(msg, listId)
 		os.Exit(0)
 	}
 
@@ -252,11 +252,11 @@ func handleSubscribe(msg *email.Email) {
 // Handle an unsubscribe command
 func handleUnsubscribe(msg *email.Email) {
 	listId := strings.TrimPrefix(msg.Subject, "Unsubscribe ")
-	listId = strings.TrimPrefix(msg.Subject, "unsubscribe ")
+	listId = strings.TrimPrefix(listId, "unsubscribe ")
 	list := lookupList(listId)
 
 	if list == nil {
-		handleInvalidRequest(msg, list.Id)
+		handleInvalidRequest(msg, listId)
 		os.Exit(0)
 	}
 
