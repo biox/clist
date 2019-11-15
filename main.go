@@ -196,14 +196,9 @@ func handleShowLists(msg *email.Email) {
 		gConfig.CommandAddress)
 
 	log.Printf("SEND")
-	reply := reply(msg)
-	log.Printf("SEND")
-	reply.From = gConfig.CommandAddress
-	log.Printf("SEND")
-	reply.Text = []byte(body.String())
-	log.Printf("SEND")
-	send(reply)
-	log.Printf("LIST_SENT To=%q", reply.To)
+	email := buildCommandEmail(msg, body)
+	send(email)
+	log.Printf("LIST_SENT To=%q", msg.From)
 }
 
 // Handle a subscribe command
@@ -270,14 +265,14 @@ func badAddress(a string, list []string) bool {
 	return false
 }
 
-func buildCommandEmail(e *email.Email, t string) *email.Email {
+func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
 	email := email.NewEmail()
 	email.Sender = gConfig.CommandAddress
 	email.From = "<" + gConfig.CommandAddress + ">"
 	email.To = []string{e.From}
 	email.Recipients = []string{e.From}
 	email.Subject = e.Subject
-	email.Text = []byte(t)
+	email.Text = []byte(t.String())
 	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
 	email.Headers["Precedence"] = []string{"list"}
 	email.Headers["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}

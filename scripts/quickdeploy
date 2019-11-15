@@ -1,0 +1,5 @@
+#!/bin/sh -eu
+
+rm -f clist
+go build .
+mv clist /usr/local/bin/clist
