@@ -270,6 +270,20 @@ func badAddress(a string, list []string) bool {
 	return false
 }
 
+func buildCommandEmail(e *email.Email, t string) *email.Email {
+	email := email.NewEmail()
+	email.Sender = gConfig.CommandAddress
+	email.From = "<" + gConfig.CommandAddress + ">"
+	email.To = []string{e.From}
+	email.Recipients = []string{e.From}
+	email.Subject = e.Subject
+	email.Text = []byte(t)
+	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
+	email.Headers["Precedence"] = []string{"list"}
+	email.Headers["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
+	return email
+}
+
 func buildListEmail(e *email.Email, l *List) *email.Email {
 	addresses := []string{}
 	m, _ := mail.ParseAddress(e.From)
