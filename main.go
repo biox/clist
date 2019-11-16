@@ -351,6 +351,7 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	newEmail.Recipients = recipients
 	newEmail.Subject = e.Subject
 	newEmail.Text = e.Text
+	newEmail.Headers["Content-Transfer-Encoding"] = e.Headers["Content-Transfer-Encoding"]
 	newEmail.Headers["Content-Type"] = e.Headers["Content-Type"]
 	newEmail.Headers["Mime-Version"] = e.Headers["Mime-Version"]
 	newEmail.Headers["Date"] = e.Headers["Date"]
