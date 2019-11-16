@@ -344,13 +344,15 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	// Add headers
 	// Return the new message
 	newEmail := email.NewEmail()
-	newEmail.Sender = l.Address
-	newEmail.From = getNameOrAddress(e.From) + "<" + l.Address + ">"
+	newEmail.Sender = "bounces-" + l.Address
+	newEmail.From = e.From
 	newEmail.To = []string{l.Name + "<" + l.Address + ">"}
 	newEmail.Cc = cc
 	newEmail.Recipients = recipients
 	newEmail.Subject = e.Subject
 	newEmail.Text = e.Text
+	newEmail.Headers["Content-Type"] = e.Headers["Content-Type"]
+	newEmail.Headers["Mime-Version"] = e.Headers["Mime-Version"]
 	newEmail.Headers["Date"] = e.Headers["Date"]
 	newEmail.Headers["Reply-To"] = []string{e.From}
 	newEmail.Headers["Precedence"] = []string{"list"}
@@ -362,18 +364,6 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	newEmail.Headers["List-Archive"] = []string{"<" + l.Archive + ">"}
 	newEmail.Headers["List-Owner"] = []string{"<" + l.Owner + ">"}
 	return newEmail
-}
-
-func getNameOrAddress(a string) string {
-	r, err := mail.ParseAddress(a)
-	if err != nil {
-		log.Printf("couldn't parse from address")
-		return ""
-	}
-	if r.Name != "" {
-		return r.Name
-	}
-	return r.Address
 }
 
 func send(e *email.Email) {
@@ -554,7 +544,7 @@ func loadConfig() {
 	if len(gConfig.ConfigFile) > 0 {
 		cfg, err = ini.Load(gConfig.ConfigFile)
 	} else {
-		cfg, err = ini.LooseLoad("nanolist.ini", "/usr/local/etc/nanolist.ini", "/etc/nanolist.ini")
+		cfg, err = ini.LooseLoad("clist.ini", "/etc/clist.ini")
 	}
 
 	if err != nil {
