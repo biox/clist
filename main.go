@@ -369,8 +369,8 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	newEmail.Headers["List-Id"] = []string{"<" + l.Id + ">"}
 	newEmail.Headers["List-Post"] = []string{"<mailto:" + l.Address + ">"}
 	newEmail.Headers["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
-	newEmail.Headers["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe>"}
-	newEmail.Headers["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe>"}
+	newEmail.Headers["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">"}
+	newEmail.Headers["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe%20" + l.Id + ">"}
 	newEmail.Headers["List-Archive"] = []string{"<" + l.Archive + ">"}
 	newEmail.Headers["List-Owner"] = []string{"<" + l.Owner + ">"}
 	return newEmail
