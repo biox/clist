@@ -325,15 +325,7 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 		addresses = append(addresses, list.Address)
 	}
 
-	cc := []string{}
 	recipients := []string{}
-
-	for _, a := range e.Cc {
-		if !badAddress(a, addresses) {
-			cc = append(cc, a)
-		}
-	}
-
 	for _, a := range fetchSubscribers(l.Id) {
 		if !badAddress(a, addresses) {
 			recipients = append(recipients, a)
@@ -346,8 +338,8 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	newEmail := email.NewEmail()
 	newEmail.Sender = "bounces-" + l.Address
 	newEmail.From = e.From
-	newEmail.To = []string{l.Name + "<" + l.Address + ">"}
-	newEmail.Cc = cc
+	newEmail.To = e.To
+	newEmail.Cc = e.Cc
 	newEmail.Recipients = recipients
 	newEmail.Subject = e.Subject
 	newEmail.Text = e.Text
@@ -501,16 +493,6 @@ func removeSubscription(user string, list string) {
 		os.Exit(0)
 	}
 	log.Printf("SUBSCRIPTION_REMOVED User=%q List=%q\n", user, list)
-}
-
-// Remove all subscriptions from a given mailing list
-func clearSubscriptions(list string) {
-	db := requireDB()
-	_, err := db.Exec("DELETE FROM subscriptions WHERE AND list=?", list)
-	if err != nil {
-		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
-		os.Exit(0)
-	}
 }
 
 // HELPER FUNCTIONS ///////////////////////////////////////////////////////////
