@@ -280,9 +280,35 @@ func handleInvalidRequest(msg *email.Email, listId string) {
 	log.Printf("INVALID_MAILING_LIST From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
 }
 
-func badAddress(a string, list []string) bool {
-	for _, l := range list {
-		if l == a {
+func badAddress(recipient string, e *email.Email) bool {
+	// From + all lists should never be recipients (loop prevention)
+	badAddresses := []string{}
+	m, err := mail.ParseAddress(e.From)
+	if err != nil {
+		log.Println("badAddress: Error parsing address")
+		log.Println(m)
+	}
+
+	badAddresses = append(badAddresses, m.Address)
+	for _, list := range gConfig.Lists {
+		badAddresses = append(badAddresses, list.Address)
+	}
+
+	// We are a bad address if we are part of the list
+	for _, ba := range badAddresses {
+		if recipient == ba {
+			return true
+		}
+	}
+
+	// We are a bad address if we are already in to/cc
+	for _, tocc := range append(e.To, e.Cc...) {
+		addr, err := mail.ParseAddress(tocc)
+		if err != nil {
+			log.Println("badAddress: Error parsing address")
+			log.Println(tocc)
+		}
+		if recipient == addr.Address {
 			return true
 		}
 	}
@@ -318,23 +344,14 @@ func lookupList(l string) *List {
 }
 
 func buildListEmail(e *email.Email, l *List) *email.Email {
-	addresses := []string{}
-	m, _ := mail.ParseAddress(e.From)
-	addresses = append(addresses, m.Address)
-	for _, list := range gConfig.Lists {
-		addresses = append(addresses, list.Address)
-	}
-
+	// Build recipient list, stripping garbage
 	recipients := []string{}
-	for _, a := range fetchSubscribers(l.Id) {
-		if !badAddress(a, addresses) {
-			recipients = append(recipients, a)
+	for _, subscriber := range fetchSubscribers(l.Id) {
+		if !badAddress(subscriber, e) {
+			recipients = append(recipients, subscriber)
 		}
 	}
 
-	// Copy the message
-	// Add headers
-	// Return the new message
 	newEmail := email.NewEmail()
 	newEmail.Sender = "bounces-" + l.Address
 	newEmail.From = e.From
