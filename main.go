@@ -80,7 +80,10 @@ func main() {
 
 func checkAddress(addrs []string, checkAddr string) bool {
 	for _, to := range addrs {
-		t, _ := mail.ParseAddress(to)
+		t, err := mail.ParseAddress(to)
+		if err != nil {
+			log.Printf("checkAddress: failed to parse address")
+		}
 		if t.Address == checkAddr {
 			return true
 		}
