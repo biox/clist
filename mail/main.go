@@ -151,7 +151,14 @@ func NewEmailFromReader(r io.Reader) (*Email, error) {
 		}
 		switch {
 		case ct == "text/plain":
-			e.Text = p.body
+			body := p.body
+			if p.header.Get("Content-Transfer-Encoding") == "base64" {
+				body, err = base64.StdEncoding.DecodeString(string(p.body))
+				if err != nil {
+					return e, err
+				}
+			}
+			e.Text = body
 		case ct == "text/html":
 			e.HTML = p.body
 		}
