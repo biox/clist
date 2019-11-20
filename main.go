@@ -247,6 +247,7 @@ func handleSubscribe(msg *email.Email) {
 	} else {
 		addSubscription(msg.From, listId)
 		fmt.Fprintf(&body, "You are now subscribed to %s\r\n", listId)
+		fmt.Fprintf(&body, "To send a message to this list, send an email to %s\r\n", list.Address)
 	}
 	reply := buildCommandEmail(msg, body)
 	send(reply)
