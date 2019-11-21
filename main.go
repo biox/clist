@@ -362,7 +362,7 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	newEmail.Headers["Date"] = e.Headers["Date"]
 	newEmail.Headers["Reply-To"] = []string{e.From}
 	newEmail.Headers["Precedence"] = []string{"list"}
-	newEmail.Headers["List-Id"] = []string{"<" + l.Id + ">"}
+	newEmail.Headers["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
 	newEmail.Headers["List-Post"] = []string{"<mailto:" + l.Address + ">"}
 	newEmail.Headers["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
 	newEmail.Headers["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">"}
