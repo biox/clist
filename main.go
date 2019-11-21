@@ -287,13 +287,7 @@ func handleInvalidRequest(msg *email.Email, listId string) {
 func badAddress(recipient string, e *email.Email) bool {
 	// From + all lists should never be recipients (loop prevention)
 	badAddresses := []string{}
-	m, err := mail.ParseAddress(e.From)
-	if err != nil {
-		log.Println("badAddress: Error parsing address")
-		log.Println(m)
-	}
 
-	badAddresses = append(badAddresses, m.Address)
 	for _, list := range gConfig.Lists {
 		badAddresses = append(badAddresses, list.Address)
 	}
