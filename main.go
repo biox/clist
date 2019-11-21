@@ -351,13 +351,14 @@ func buildListEmail(e *email.Email, l *List) *email.Email {
 	}
 
 	newEmail := email.NewEmail()
-	newEmail.Sender = "bounces-" + l.Address
+	newEmail.Sender = l.Address
 	newEmail.From = e.From
 	newEmail.To = e.To
 	newEmail.Cc = e.Cc
 	newEmail.Recipients = recipients
 	newEmail.Subject = e.Subject
 	newEmail.Text = e.Text
+	newEmail.Headers["Return-Path"] = []string{"bounce-" + l.Address}
 	newEmail.Headers["Date"] = e.Headers["Date"]
 	newEmail.Headers["Reply-To"] = []string{e.From}
 	newEmail.Headers["Precedence"] = []string{"list"}
