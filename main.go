@@ -348,9 +348,9 @@ func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 func send(e *parsemail.Email) {
 	// Bcc = recipients
 	var recipients []string
-    for _, a := range e.Bcc {
-        recipients = append(recipients, a.Address)
-    }
+	for _, a := range e.Bcc {
+		recipients = append(recipients, a.Address)
+	}
 
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
 	smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())

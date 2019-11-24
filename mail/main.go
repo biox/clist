@@ -442,7 +442,7 @@ func (e *Email) ToBytes() []byte {
 	fmt.Fprintf(&buf, "To: %s\r\n", sepAddrs(e.To))
 	fmt.Fprintf(&buf, "Cc: %s\r\n", sepAddrs(e.Cc))
 	fmt.Fprintf(&buf, "Reply-To: %s\r\n", sepAddrs(e.ReplyTo))
-	if ! e.Date.IsZero() {
+	if !e.Date.IsZero() {
 		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date)
 	}
 	if len(e.MessageID) > 0 {
