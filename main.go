@@ -64,27 +64,22 @@ func main() {
 	requireLog()
 
 	if flag.Arg(0) == "message" {
-		msg := email.NewEmail()
-		msg, err := email.NewEmailFromReader(bufio.NewReader(os.Stdin))
+		msg, err := parsemail.Parse(bufio.NewReader(os.Stdin))
 		if err != nil {
 			log.Printf("ERROR_PARSING_MESSAGE Error=%q\n", err.Error())
 			os.Exit(0)
 		}
 		log.Printf("MESSAGE_RECEIVED From=%q To=%q Cc=%q Bcc=%q Subject=%q\n",
 			msg.From, msg.To, msg.Cc, msg.Bcc, msg.Subject)
-		handleMessage(msg)
+		handleMessage(&msg)
 	} else {
 		fmt.Printf("Unknown command %s\n", flag.Arg(0))
 	}
 }
 
-func checkAddress(addrs []string, checkAddr string) bool {
-	for _, to := range addrs {
-		t, err := mail.ParseAddress(to)
-		if err != nil {
-			log.Printf("checkAddress: failed to parse address")
-		}
-		if t.Address == checkAddr {
+func checkAddress(addrs []*mail.Address, checkAddr string) bool {
+	for _, a := range addrs {
+		if a.Address == checkAddr {
 			return true
 		}
 	}
@@ -92,7 +87,7 @@ func checkAddress(addrs []string, checkAddr string) bool {
 }
 
 // Figure out if this is a command, or a mailing list post
-func handleMessage(msg *email.Email) {
+func handleMessage(msg *parsemail.Email) {
 	if checkAddress(msg.To, gConfig.CommandAddress) {
 		handleCommand(msg)
 	} else {
@@ -107,7 +102,7 @@ func handleMessage(msg *email.Email) {
 		log.Printf("matchedLists: %q", matchedLists)
 		if len(matchedLists) == 1 {
 			list := matchedLists[0]
-			if list.CanPost(msg.From) {
+			if list.CanPost(msg.Sender) {
 				msg := buildListEmail(msg, list)
 				send(msg)
 				log.Printf("MESSAGE_SENT ListId=%q",
@@ -149,7 +144,7 @@ func subjectParser(s string) string {
 }
 
 // Handle the command given by the user
-func handleCommand(msg *email.Email) {
+func handleCommand(msg *parsemail.Email) {
 	switch subjectParser(msg.Subject) {
 	case "lists":
 		handleShowLists(msg)
@@ -165,7 +160,7 @@ func handleCommand(msg *email.Email) {
 }
 
 // Reply to a message that has nowhere to go
-func handleNoDestination(msg *email.Email) {
+func handleNoDestination(msg *parsemail.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "No mailing lists addressed. Your message has not been delivered.\r\n")
 	reply := buildCommandEmail(msg, body)
@@ -174,7 +169,7 @@ func handleNoDestination(msg *email.Email) {
 }
 
 // Reply that the user isn't authorised to post to the list
-func handleNotAuthorisedToPost(msg *email.Email) {
+func handleNotAuthorisedToPost(msg *parsemail.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "You are not an approved poster for this mailing list. Your message has not been delivered.\r\n")
 	reply := buildCommandEmail(msg, body)
@@ -183,7 +178,7 @@ func handleNotAuthorisedToPost(msg *email.Email) {
 }
 
 // Reply to an unknown command, giving some help
-func handleUnknownCommand(msg *email.Email) {
+func handleUnknownCommand(msg *parsemail.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body,
 		"%s is not a valid command.\r\n\r\n"+
@@ -196,7 +191,7 @@ func handleUnknownCommand(msg *email.Email) {
 }
 
 // Reply to a help command with help information
-func handleHelp(msg *email.Email) {
+func handleHelp(msg *parsemail.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, commandInfo())
 	reply := buildCommandEmail(msg, body)
@@ -205,7 +200,7 @@ func handleHelp(msg *email.Email) {
 }
 
 // Reply to a show mailing lists command with a list of mailing lists
-func handleShowLists(msg *email.Email) {
+func handleShowLists(msg *parsemail.Email) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "Available mailing lists\r\n")
 	fmt.Fprintf(&body, "-----------------------\r\n\r\n")
@@ -230,7 +225,7 @@ func handleShowLists(msg *email.Email) {
 }
 
 // Handle a subscribe command
-func handleSubscribe(msg *email.Email) {
+func handleSubscribe(msg *parsemail.Email) {
 	listId := strings.TrimPrefix(msg.Subject, "Subscribe ")
 	listId = strings.TrimPrefix(listId, "subscribe ")
 	list := lookupList(listId)
@@ -241,11 +236,11 @@ func handleSubscribe(msg *email.Email) {
 	}
 
 	var body bytes.Buffer
-	if isSubscribed(msg.From, listId) {
+	if isSubscribed(msg.Sender, listId) {
 		fmt.Fprintf(&body, "You are already subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_SUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
 	} else {
-		addSubscription(msg.From, listId)
+		addSubscription(msg.Sender, listId)
 		fmt.Fprintf(&body, "You are now subscribed to %s\r\n", listId)
 		fmt.Fprintf(&body, "To send a message to this list, send an email to %s\r\n", list.Address)
 	}
@@ -254,7 +249,7 @@ func handleSubscribe(msg *email.Email) {
 }
 
 // Handle an unsubscribe command
-func handleUnsubscribe(msg *email.Email) {
+func handleUnsubscribe(msg *parsemail.Email) {
 	listId := strings.TrimPrefix(msg.Subject, "Unsubscribe ")
 	listId = strings.TrimPrefix(listId, "unsubscribe ")
 	list := lookupList(listId)
@@ -265,18 +260,18 @@ func handleUnsubscribe(msg *email.Email) {
 	}
 
 	var body bytes.Buffer
-	if !isSubscribed(msg.From, listId) {
+	if !isSubscribed(msg.Sender, listId) {
 		fmt.Fprintf(&body, "You aren't subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_UNSUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
 	} else {
-		removeSubscription(msg.From, listId)
+		removeSubscription(msg.Sender, listId)
 		fmt.Fprintf(&body, "You are now unsubscribed from %s\r\n", listId)
 	}
 	reply := buildCommandEmail(msg, body)
 	send(reply)
 }
 
-func handleInvalidRequest(msg *email.Email, listId string) {
+func handleInvalidRequest(msg *parsemail.Email, listId string) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "Unable to operate against %s, Invalid mailing list ID.\r\n", listId)
 	reply := buildCommandEmail(msg, body)
@@ -284,52 +279,36 @@ func handleInvalidRequest(msg *email.Email, listId string) {
 	log.Printf("INVALID_MAILING_LIST From=%q To=%q Cc=%q Bcc=%q", msg.From, msg.To, msg.Cc, msg.Bcc)
 }
 
-func badAddress(recipient string, e *email.Email) bool {
-	// From + all lists should never be recipients (loop prevention)
-	badAddresses := []string{}
-
+func badAddress(recipient string, e *parsemail.Email) bool {
 	for _, list := range gConfig.Lists {
-		badAddresses = append(badAddresses, list.Address)
-	}
-
-	// We are a bad address if we are part of the list
-	for _, ba := range badAddresses {
-		if recipient == ba {
+		// We are a bad address if we are part of the list
+		if recipient == list.Address {
 			return true
 		}
 	}
 
 	// We are a bad address if we are already in to/cc
-	for _, tocc := range append(e.To, e.Cc...) {
-		addr, err := mail.ParseAddress(tocc)
-		if err != nil {
-			log.Println("badAddress: Error parsing address")
-			log.Println(tocc)
-		}
-		if recipient == addr.Address {
+	for _, a := range append(append(e.To, e.Cc...), e.Bcc...) {
+		if recipient == a.Address {
 			return true
 		}
 	}
 	return false
 }
 
-func buildCommandEmail(e *email.Email, t bytes.Buffer) *email.Email {
-	from, err := mail.ParseAddress(e.From)
-	if err != nil {
-		log.Printf("WARN: CommandEmail: couldn't parse from address")
-	}
-
-	email := email.NewEmail()
-	email.Sender = gConfig.CommandAddress
-	email.From = "<" + gConfig.CommandAddress + ">"
-	email.To = []string{from.Name + "<" + from.Address + ">"}
-	email.Recipients = []string{from.Address}
-	email.Subject = "Re: " + e.Subject
-	email.Text = []byte(t.String())
-	email.Headers["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
-	email.Headers["Precedence"] = []string{"list"}
-	email.Headers["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
-	return email
+func buildCommandEmail(e *parsemail.Email, t bytes.Buffer) *parsemail.Email {
+	response := parsemail.Email{}
+	response.Sender = &mail.Address{"", gConfig.CommandAddress}
+	var from []*mail.Address
+	response.From = append(from, &mail.Address{"", gConfig.CommandAddress})
+	response.To = e.From
+	response.Bcc = e.From
+	response.Subject = "Re: " + e.Subject
+	response.TextBody = t.String()
+	response.Header["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
+	response.Header["Precedence"] = []string{"list"}
+	response.Header["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
+	return &response
 }
 
 func lookupList(l string) *List {
@@ -341,47 +320,47 @@ func lookupList(l string) *List {
 	return nil
 }
 
-func buildListEmail(e *email.Email, l *List) *email.Email {
+func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 	// Build recipient list, stripping garbage
-	recipients := []string{}
+	var recipients []*mail.Address
 	for _, subscriber := range fetchSubscribers(l.Id) {
 		if !badAddress(subscriber, e) {
-			recipients = append(recipients, subscriber)
+			recipients = append(recipients, &mail.Address{"", subscriber})
 		}
 	}
 
-	newEmail := email.NewEmail()
-	newEmail.Sender = l.Address
-	newEmail.From = e.From
-	newEmail.To = e.To
-	newEmail.Cc = e.Cc
-	newEmail.Recipients = recipients
-	newEmail.Subject = e.Subject
-	newEmail.Text = e.Text
-	newEmail.Headers["Return-Path"] = []string{"bounce-" + l.Address}
-	newEmail.Headers["Date"] = e.Headers["Date"]
-	newEmail.Headers["Reply-To"] = []string{e.From}
-	newEmail.Headers["Precedence"] = []string{"list"}
-	newEmail.Headers["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
-	newEmail.Headers["List-Post"] = []string{"<mailto:" + l.Address + ">"}
-	newEmail.Headers["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
-	newEmail.Headers["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">"}
-	newEmail.Headers["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe%20" + l.Id + ">"}
-	newEmail.Headers["List-Archive"] = []string{"<" + l.Archive + ">"}
-	newEmail.Headers["List-Owner"] = []string{"<" + l.Owner + ">"}
-	return newEmail
+	post := e
+	post.Sender = &mail.Address{"", l.Address}
+	post.Bcc = recipients
+	post.Header["Return-Path"] = []string{"bounce-" + l.Address}
+	post.Header["Date"] = e.Header["Date"] // RFC 1123
+	post.Header["Reply-To"] = []string{e.Sender.Address}
+	post.Header["Precedence"] = []string{"list"}
+	post.Header["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
+	post.Header["List-Post"] = []string{"<mailto:" + l.Address + ">"}
+	post.Header["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
+	post.Header["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">"}
+	post.Header["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe%20" + l.Id + ">"}
+	post.Header["List-Archive"] = []string{"<" + l.Archive + ">"}
+	post.Header["List-Owner"] = []string{"<" + l.Owner + ">"}
+	return post
 }
 
-func send(e *email.Email) {
-	log.Printf("MESSAGE:\n")
-	log.Printf("%q\n", e)
-	e.Send("mail.c3f.net:587", smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net"))
+func send(e *parsemail.Email) {
+	// Bcc = recipients
+	var recipients []string
+    for _, a := range e.Bcc {
+        recipients = append(recipients, a.Address)
+    }
+
+	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
+	smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, []byte(e.TextBody))
 }
 
 // MAILING LIST LOGIC /////////////////////////////////////////////////////////
 
 // Check if the user is authorised to post to this mailing list
-func (list *List) CanPost(from string) bool {
+func (list *List) CanPost(from *mail.Address) bool {
 
 	// Is this list restricted to subscribers only?
 	if list.SubscribersOnly && !isSubscribed(from, list.Id) {
@@ -391,7 +370,7 @@ func (list *List) CanPost(from string) bool {
 	// Is there a whitelist of approved posters?
 	if len(list.Posters) > 0 {
 		for _, poster := range list.Posters {
-			if from == poster {
+			if from.Address == poster {
 				return true
 			}
 		}
@@ -453,16 +432,11 @@ func fetchSubscribers(listId string) []string {
 }
 
 // Check if a user is subscribed to a mailing list
-func isSubscribed(user string, list string) bool {
-	addressObj, err := mail.ParseAddress(user)
-	if err != nil {
-		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
-		os.Exit(0)
-	}
+func isSubscribed(sender *mail.Address, list string) bool {
 	db := requireDB()
 
 	exists := false
-	err = db.QueryRow("SELECT 1 FROM subscriptions WHERE user=? AND list=?", addressObj.Address, list).Scan(&exists)
+	err := db.QueryRow("SELECT 1 FROM subscriptions WHERE user=? AND list=?", sender.Address, list).Scan(&exists)
 
 	if err == sql.ErrNoRows {
 		return false
@@ -475,37 +449,25 @@ func isSubscribed(user string, list string) bool {
 }
 
 // Add a subscription to the subscription database
-func addSubscription(user string, list string) {
-	addressObj, err := mail.ParseAddress(user)
-	if err != nil {
-		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
-		os.Exit(0)
-	}
-
+func addSubscription(sender *mail.Address, list string) {
 	db := requireDB()
-	_, err = db.Exec("INSERT INTO subscriptions (user,list) VALUES(?,?)", addressObj.Address, list)
+	_, err := db.Exec("INSERT INTO subscriptions (user,list) VALUES(?,?)", sender.Address, list)
 	if err != nil {
 		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
 		os.Exit(0)
 	}
-	log.Printf("SUBSCRIPTION_ADDED User=%q List=%q\n", user, list)
+	log.Printf("SUBSCRIPTION_ADDED Sender=%q List=%q\n", sender, list)
 }
 
 // Remove a subscription from the subscription database
-func removeSubscription(user string, list string) {
-	addressObj, err := mail.ParseAddress(user)
-	if err != nil {
-		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
-		os.Exit(0)
-	}
-
+func removeSubscription(sender *mail.Address, list string) {
 	db := requireDB()
-	_, err = db.Exec("DELETE FROM subscriptions WHERE user=? AND list=?", addressObj.Address, list)
+	_, err := db.Exec("DELETE FROM subscriptions WHERE user=? AND list=?", sender.Address, list)
 	if err != nil {
 		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
 		os.Exit(0)
 	}
-	log.Printf("SUBSCRIPTION_REMOVED User=%q List=%q\n", user, list)
+	log.Printf("SUBSCRIPTION_REMOVED Sender=%q List=%q\n", sender, list)
 }
 
 // HELPER FUNCTIONS ///////////////////////////////////////////////////////////
