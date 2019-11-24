@@ -451,7 +451,10 @@ func (e *Email) ToBytes() []byte {
 	if len(e.InReplyTo) > 0 {
 		fmt.Fprintf(&buf, "In-Reply-To: %s\r\n", strings.Join(e.InReplyTo, ","))
 	}
-	// go over remainer of headers
+	// go over remainder of headers
+	for k, v := range e.Header { 
+	    fmt.Fprintf(&buf, "%s: %s\r\n", k, strings.Join(v, ","))
+	}
 	fmt.Fprintf(&buf, "Subject: %s\r\n", e.Subject)
 	fmt.Fprintf(&buf, "\r\n%s", e.TextBody)
 
