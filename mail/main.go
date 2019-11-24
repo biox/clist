@@ -426,6 +426,38 @@ type EmbeddedFile struct {
 	Data        io.Reader
 }
 
+func sepAddrs(mails []*mail.Address) string {
+	var response []string
+	var sm string
+	for _, m := range mails {
+		sm = m.String()
+		response = append(response, sm)
+	}
+	return strings.Join(response, ",")
+}
+
+func (e *Email) ToBytes() []byte {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "From: %s\r\n", sepAddrs(e.From))
+	fmt.Fprintf(&buf, "To: %s\r\n", sepAddrs(e.To))
+	fmt.Fprintf(&buf, "Cc: %s\r\n", sepAddrs(e.Cc))
+	fmt.Fprintf(&buf, "Reply-To: %s\r\n", sepAddrs(e.ReplyTo))
+	if ! e.Date.IsZero() {
+		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date)
+	}
+	if len(e.MessageID) > 0 {
+		fmt.Fprintf(&buf, "Messsage-ID: %s\r\n", e.MessageID)
+	}
+	if len(e.InReplyTo) > 0 {
+		fmt.Fprintf(&buf, "In-Reply-To: %s\r\n", strings.Join(e.InReplyTo, ","))
+	}
+	// go over remainer of headers
+	fmt.Fprintf(&buf, "Subject: %s\r\n", e.Subject)
+	fmt.Fprintf(&buf, "\r\n%s", e.TextBody)
+
+	return buf.Bytes()
+}
+
 // Email with fields for all the headers defined in RFC5322 with it's attachments and
 type Email struct {
 	Header mail.Header

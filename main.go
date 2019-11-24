@@ -330,11 +330,10 @@ func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 	}
 
 	post := e
-	post.Sender = &mail.Address{"", l.Address}
+	post.Sender = &mail.Address{l.Name, l.Address}
 	post.Bcc = recipients
 	post.Header["Return-Path"] = []string{"bounce-" + l.Address}
 	post.Header["Date"] = e.Header["Date"] // RFC 1123
-	post.Header["Reply-To"] = []string{e.Sender.Address}
 	post.Header["Precedence"] = []string{"list"}
 	post.Header["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
 	post.Header["List-Post"] = []string{"<mailto:" + l.Address + ">"}
@@ -354,7 +353,7 @@ func send(e *parsemail.Email) {
     }
 
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
-	smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, []byte(e.TextBody))
+	smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())
 }
 
 // MAILING LIST LOGIC /////////////////////////////////////////////////////////
