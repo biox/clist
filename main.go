@@ -102,7 +102,7 @@ func handleMessage(msg *parsemail.Email) {
 		log.Printf("matchedLists: %q", matchedLists)
 		if len(matchedLists) == 1 {
 			list := matchedLists[0]
-			if list.CanPost(msg.Sender) {
+			if list.CanPost(msg.From[0]) {
 				msg := buildListEmail(msg, list)
 				send(msg)
 				log.Printf("MESSAGE_SENT ListId=%q",
@@ -236,11 +236,11 @@ func handleSubscribe(msg *parsemail.Email) {
 	}
 
 	var body bytes.Buffer
-	if isSubscribed(msg.Sender, listId) {
+	if isSubscribed(msg.From[0], listId) {
 		fmt.Fprintf(&body, "You are already subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_SUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
 	} else {
-		addSubscription(msg.Sender, listId)
+		addSubscription(msg.From[0], listId)
 		fmt.Fprintf(&body, "You are now subscribed to %s\r\n", listId)
 		fmt.Fprintf(&body, "To send a message to this list, send an email to %s\r\n", list.Address)
 	}
@@ -260,11 +260,11 @@ func handleUnsubscribe(msg *parsemail.Email) {
 	}
 
 	var body bytes.Buffer
-	if !isSubscribed(msg.Sender, listId) {
+	if !isSubscribed(msg.From[0], listId) {
 		fmt.Fprintf(&body, "You aren't subscribed to %s\r\n", listId)
 		log.Printf("DUPLICATE_UNSUBSCRIPTION_REQUEST User=%q List=%q\n", msg.From, listId)
 	} else {
-		removeSubscription(msg.Sender, listId)
+		removeSubscription(msg.From[0], listId)
 		fmt.Fprintf(&body, "You are now unsubscribed from %s\r\n", listId)
 	}
 	reply := buildCommandEmail(msg, body)
@@ -299,15 +299,19 @@ func badAddress(recipient string, e *parsemail.Email) bool {
 func buildCommandEmail(e *parsemail.Email, t bytes.Buffer) *parsemail.Email {
 	response := parsemail.Email{}
 	response.Sender = &mail.Address{"", gConfig.CommandAddress}
-	var from []*mail.Address
-	response.From = append(from, &mail.Address{"", gConfig.CommandAddress})
+	from := &mail.Address{"clist", gConfig.CommandAddress}
+	response.From = []*mail.Address{from}
 	response.To = e.From
 	response.Bcc = e.From
 	response.Subject = "Re: " + e.Subject
+	header := make(map[string][]string)
+	header["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
+	header["Precedence"] = []string{"list"}
+	header["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
+	response.Header = header
+	response.Bcc = e.From
 	response.TextBody = t.String()
-	response.Header["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
-	response.Header["Precedence"] = []string{"list"}
-	response.Header["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
+	log.Printf("%q", response)
 	return &response
 }
 
@@ -431,11 +435,11 @@ func fetchSubscribers(listId string) []string {
 }
 
 // Check if a user is subscribed to a mailing list
-func isSubscribed(sender *mail.Address, list string) bool {
+func isSubscribed(address *mail.Address, list string) bool {
 	db := requireDB()
 
 	exists := false
-	err := db.QueryRow("SELECT 1 FROM subscriptions WHERE user=? AND list=?", sender.Address, list).Scan(&exists)
+	err := db.QueryRow("SELECT 1 FROM subscriptions WHERE user=? AND list=?", address.Address, list).Scan(&exists)
 
 	if err == sql.ErrNoRows {
 		return false
@@ -448,25 +452,25 @@ func isSubscribed(sender *mail.Address, list string) bool {
 }
 
 // Add a subscription to the subscription database
-func addSubscription(sender *mail.Address, list string) {
+func addSubscription(address *mail.Address, list string) {
 	db := requireDB()
-	_, err := db.Exec("INSERT INTO subscriptions (user,list) VALUES(?,?)", sender.Address, list)
+	_, err := db.Exec("INSERT INTO subscriptions (user,list) VALUES(?,?)", address.Address, list)
 	if err != nil {
 		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
 		os.Exit(0)
 	}
-	log.Printf("SUBSCRIPTION_ADDED Sender=%q List=%q\n", sender, list)
+	log.Printf("SUBSCRIPTION_ADDED Sender=%q List=%q\n", address, list)
 }
 
 // Remove a subscription from the subscription database
-func removeSubscription(sender *mail.Address, list string) {
+func removeSubscription(address *mail.Address, list string) {
 	db := requireDB()
-	_, err := db.Exec("DELETE FROM subscriptions WHERE user=? AND list=?", sender.Address, list)
+	_, err := db.Exec("DELETE FROM subscriptions WHERE user=? AND list=?", address.Address, list)
 	if err != nil {
 		log.Printf("DATABASE_ERROR Error=%q\n", err.Error())
 		os.Exit(0)
 	}
-	log.Printf("SUBSCRIPTION_REMOVED Sender=%q List=%q\n", sender, list)
+	log.Printf("SUBSCRIPTION_REMOVED Sender=%q List=%q\n", address, list)
 }
 
 // HELPER FUNCTIONS ///////////////////////////////////////////////////////////
