@@ -1,29 +1,25 @@
+# clist - simple mailing list
 .POSIX:
 
-VERSION=0.1.0
+include config.mk
 
-PREFIX?=/usr/local
-_INSTDIR=$(DESTDIR)$(PREFIX)
-BINDIR?=$(_INSTDIR)/bin
-GO?=go
-GOFLAGS?=
+all: options clean clist
 
-GOSRC!=find . -name '*.go'
-GOSRC+=go.mod go.sum
-
-clist: $(GOSRC)
-	$(GO) build $(GOFLAGS) \
-		-ldflags "-X main.Prefix=$(PREFIX) \
-		-X main.ShareDir=$(SHAREDIR) \
-		-X main.Version=$(VERSION)" \
-		-o $@
-
-all: clist
-
-# Exists in GNUMake but not in NetBSD make and others.
-RM?=rm -f
+options:
+	@echo clist build options:
+	@echo "VERSION = $(VERSION)"
+	@echo "PREFIX  = $(PREFIX)"
 
 clean:
-	$(RM) aerc
+	rm -f clist
 
-.DEFAULT_GOAL := all
+clist:
+	go build -o clist -v
+
+install: clist
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	cp -f clist $(DESTDIR)$(PREFIX)/bin
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/clist
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/clist

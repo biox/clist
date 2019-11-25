@@ -96,10 +96,10 @@ func handleMessage(msg *parsemail.Email) {
 			agg := append(msg.To, msg.Cc...)
 			if checkAddress(agg, l.Address) {
 				matchedLists = append(matchedLists, l)
+				log.Printf("matched list: %q", l.Address)
 			}
 		}
 
-		log.Printf("matchedLists: %q", matchedLists)
 		if len(matchedLists) == 1 {
 			list := matchedLists[0]
 			if list.CanPost(msg.From[0]) {
