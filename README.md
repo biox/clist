@@ -4,6 +4,7 @@ clist aims to be an RFC-compliant mailing list manager.
 When users send an email to a list, clist delivers that email to other subscribers of that list.
 Users can manage their subscriptions by sending commands to clist over email.
 clist can manage multiple lists, each with its own set of subscribers.
+clist is intended to be used by a single organization and will provide a sane set of defaults and a simple configuration.
 
 ## Dependencies
 
@@ -11,7 +12,7 @@ clist requires:
 
 * a Go compiler
 * [go-sqlite3](https://github.com/mattn/go-sqlite3)
-* an SMTP server to send mail
+* an encrypted SMTP server to send mail
 * an MTA to handle receiving mail
 
 ## Installation
@@ -19,7 +20,7 @@ clist requires:
 To install:
 
 1. clone the repository.
-2. change to the clist directory and source `scripts/quickdeploy` to build and install clist.
+2. run `make clean install` to compile + install clist.
 
 ## Configuration
 
@@ -33,15 +34,13 @@ It also contains sections for each list that tell clist how each list should beh
 A basic configuration looks like this:
 
 ```
-command_address = 
-log = /path/to/logfile
-database = dbname
-smtp_hostname = your_smtp_host
+log = /var/log/clist
+database = /var/db/clist/clist.db
+command_address = majordomo@example.com
+smtp_hostname = smtp.example.com
 smtp_port = 587
 smtp_username = AzureDiamond
 smtp_password = hunter2
-Debug = true | false
-ConfigFile = /path/to/more/config
 ```
 
 **command_address**
@@ -50,7 +49,7 @@ The email address that clist will use to accept commands.
 
 **log**
 
-Path to the file where clist will store log information.
+Path to the file that clist will log to.
 
 **database**
 
@@ -69,35 +68,33 @@ SMTP port number. Usually 25, 587, or 2525 for unencrypted connections, and 465 
 
 Username and password for the SMTP server.
 
-**Debug**
-
-Not used.
-
-**ConfigFile**
-
-Path to a file containing configuration to be loaded by clist.
-
 ### List Configuration
 
 Each list section looks like this:
 
 ```
-List
-name = unused?
-archive = archive@example.com
-owner = owner@example.com
-description = A short description of the list.
-Id = thelist
-address = not super sure what this does
-hidden = true|false
-subscribers_only = true|false
-posters,omitempty = authorized@example.com
-bcc,omitempty = anthonyb@example.com
+[list.test]
+address = test@example.com
+name = "Test"
+description = "Test List"
+subscribers_only = true
+archive = "https://archive.example.com/test"
+owner = "Lain Iwakura"
+posters = "j3s@example.com,aedric@example.com" # optional
 ```
+
+**id**
+
+A short identifier for this list.
+Used when subscribing or unsubscribing to the list. ([list.test] would mean the identifier is "test")
+
+**address**
+
+Email address of list
 
 **name**
 
-This appears to be unused.
+Shortname for mailing list (openbsd-misc, Misc, BurgerTown)
 
 **archive**
 
@@ -105,44 +102,35 @@ An email address. The value for this setting is set as the List-Archive header o
 
 **owner**
 
-An email address inserted into outgoing mail as the List-Owner header.
+An email address inserted into outgoing mail as the List-Owner header per RFC 5064.
 
 **description**
 
 A description of this list. 
 This value is provided in the listing of lists given in response to a request for a list of mailing lists.
 
-**Id**
-
-A short identifier for this list.
-Used when subscribing or unsubscribing to the list.
-
-**address**
-
-I'm not entirely sure what this does.
-
-**hidden**
-
-If set to true, this list will not appear in the listing of mailing lists.
-
 **subscribers_only**
 
 If set to true, only subscribers may send messages to the list.
+We recommend sending this to true.
 
 **posters,omitempty**
 
-A comma-separated whitelist of approved posters.
-
-**bcc,omitempty**
-
-A comma-separated list of bcc recipients.
+A comma-separated whitelist of approved posters, if you want the list to be restrictive (announce lists, for example)
 
 Using clist
 -----------
 
-clist monitors the subject line of emails sent to the command address.
-This address is set using the `command_address` configuration setting.
-To get a list of available commands, send an email with 'help' in the subject line to the address that clist uses to handle commands.
+clist takes input on stdin, and responds appropriately via the SMTP server that has been configured.
+
+getting data to clist's stdin can be as simple as modifying `/etc/mail/aliases`
+
+```
+majordomo: | /usr/local/bin/clist -config /etc/clist.ini message
+```
+
+clist will monitor the subject line of emails sent to the command address.
+To get a list of available commands, send an email with 'help' in the subject line to the command address.
 
 Available commands are:
 
@@ -152,7 +140,7 @@ Reply with a list of valid commands.
 
 **lists**
 
-Reply with a list of mailing lists. Any lists having `hidden = true` will be omitted from this list.
+Reply with a list of mailing lists.
 
 **subscribe**
 
@@ -166,5 +154,4 @@ clist will remove the address in the From head to the list.
 
 ## Contributing
 
-Send patches and bug reports to j3s.
-
+To help with development, please send patches, ideas, and bug reports to misc@c3f.net
