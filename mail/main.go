@@ -450,7 +450,7 @@ func (e *Email) ToBytes() []byte {
 		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date)
 	}
 	if len(e.MessageID) > 0 {
-		fmt.Fprintf(&buf, "Message-ID: %s\r\n", e.MessageID)
+		fmt.Fprintf(&buf, "Message-ID: <%s>\r\n", e.MessageID)
 	}
 	if len(e.InReplyTo) > 0 {
 		fmt.Fprintf(&buf, "In-Reply-To: <%s>\r\n", strings.Join(e.InReplyTo, "> <"))
