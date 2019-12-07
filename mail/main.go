@@ -453,7 +453,10 @@ func (e *Email) ToBytes() []byte {
 		fmt.Fprintf(&buf, "Message-ID: %s\r\n", e.MessageID)
 	}
 	if len(e.InReplyTo) > 0 {
-		fmt.Fprintf(&buf, "In-Reply-To: %s\r\n", strings.Join(e.InReplyTo, ","))
+		fmt.Fprintf(&buf, "In-Reply-To: <%s>\r\n", strings.Join(e.InReplyTo, "> <"))
+	}
+	if len(e.References) > 0 {
+		fmt.Fprintf(&buf, "References: <%s>\r\n", strings.Join(e.References, "> <"))
 	}
 	if len(e.Header.Get("List-Id")) > 0 {
 		fmt.Fprintf(&buf, "List-Id: %s\r\n", e.Header.Get("List-Id"))
