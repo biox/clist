@@ -337,7 +337,6 @@ func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 	post.Sender = &mail.Address{l.Name, l.Address}
 	post.Bcc = recipients
 	post.Header["Return-Path"] = []string{"bounce-" + l.Address}
-	post.Header["Date"] = e.Header["Date"] // RFC 1123
 	post.Header["Precedence"] = []string{"list"}
 	post.Header["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
 	post.Header["List-Post"] = []string{"<mailto:" + l.Address + ">"}

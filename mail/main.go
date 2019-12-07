@@ -447,7 +447,7 @@ func (e *Email) ToBytes() []byte {
 		fmt.Fprintf(&buf, "Cc: %s\r\n", commaSep(e.Cc))
 	}
 	if !e.Date.IsZero() {
-		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date)
+		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date.Format(time.RFC1123Z))
 	}
 	if len(e.MessageID) > 0 {
 		fmt.Fprintf(&buf, "Message-ID: <%s>\r\n", e.MessageID)
