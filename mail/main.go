@@ -173,6 +173,11 @@ func parseMultipartAlternative(msg io.Reader, boundary string) (textBody, htmlBo
 			return textBody, htmlBody, embeddedFiles, err
 		}
 
+		ContentTransferEncoding, params, err := mime.ParseMediaType(part.Header.Get("Content-Transfer-Encoding"))
+		if err != nil {
+			return textBody, htmlBody, embeddedFiles, err
+		}
+
 		switch contentType {
 		case contentTypeTextPlain:
 			ppContent, err := ioutil.ReadAll(part)
@@ -180,7 +185,17 @@ func parseMultipartAlternative(msg io.Reader, boundary string) (textBody, htmlBo
 				return textBody, htmlBody, embeddedFiles, err
 			}
 
-			textBody += strings.TrimSuffix(string(ppContent[:]), "\n")
+			txt := strings.TrimSuffix(string(ppContent[:]), "\n")
+
+			if ContentTransferEncoding == "base64" {
+				b, err := base64.StdEncoding.DecodeString(txt)
+				if err != nil {
+					return textBody, htmlBody, embeddedFiles, err
+				}
+				txt = string(b)
+			}
+
+			textBody += txt
 		case contentTypeTextHtml:
 			ppContent, err := ioutil.ReadAll(part)
 			if err != nil {
