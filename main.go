@@ -66,7 +66,7 @@ func main() {
 	if flag.Arg(0) == "message" {
 		msg, err := parsemail.Parse(bufio.NewReader(os.Stdin))
 		if err != nil {
-			log.Printf("ERROR_PARSING_MESSAGE Error=%q\n", err.Error())
+			log.Printf("ERROR_PARSING_MESSAGE mail=%q msg=%q error=%q\n", os.Stdin, msg, err.Error())
 			os.Exit(0)
 		}
 		log.Printf("MESSAGE_RECEIVED From=%q To=%q Cc=%q Bcc=%q Subject=%q\n",
@@ -358,7 +358,7 @@ func send(e *parsemail.Email) {
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
 	err := smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())
 	if err != nil {
-		log.Printf("ERROR SENDING MAIL: %q\n", err)
+		log.Printf("ERROR_SENDING_MAIL: Error=%q\n", err.Error())
 	}
 }
 
