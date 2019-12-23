@@ -356,7 +356,10 @@ func send(e *parsemail.Email) {
 	}
 
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
-	smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())
+	err := smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())
+	if err != nil {
+		log.Printf("ERROR SENDING MAIL: %q\n", err)
+	}
 }
 
 // MAILING LIST LOGIC /////////////////////////////////////////////////////////
