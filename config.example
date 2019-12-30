@@ -1,0 +1,41 @@
+# Logfile. clist does not rotate its logs automatically. Recommended path is
+# /var/log/mail/clist.log
+log = /var/log/mail/clist.log
+
+# An sqlite3 database is used for storing the email addresses subscribed to
+# each mailing list. Recommended location is /var/lib/clist/lists.db
+database = /var/lib/clist/lists.db
+
+# Address clist should receive user commands on
+command_address = list-manager@example.com
+
+# SMTP details for sending mail
+smtp_hostname = mail.example.com
+smtp_port = 587
+smtp_username = "list-manager@example.com"
+smtp_password = "ultra-secret-password"
+
+# Example of a typical list
+[list.bugs]
+address = bugs@example.com
+name = "Bugs"
+description = "bugs related to example dot com"
+subscribers_only = true
+archive = "https://example.com/bugs/archive"
+owner = "https://example.com"
+
+# Example of an exclusively-postable announcement list
+[list.announcements]
+address = announce@example.com
+name = "Announcements"
+description = "Very very important announcements"
+posters = j3s@example.com
+archive = "https://announce.example.com"
+owner = "https://example.com"
+
+# Anonymous list, anyone can post to this garbage
+[list.test]
+address = everyone@example.com
+name = "Everybody everybody"
+description = "It's a free for all"
+subscribers_only = false
