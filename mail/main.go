@@ -31,30 +31,13 @@ func Parse(r io.Reader) (email Email, err error) {
 		return
 	}
 
-	contentType, params, err := parseContentType(msg.Header.Get("Content-Type"))
-	if err != nil {
-		return
-	}
-
-	switch contentType {
-	case contentTypeMultipartMixed:
-		email.TextBody, email.HTMLBody, email.Attachments, email.EmbeddedFiles, err = parseMultipartMixed(msg.Body, params["boundary"])
-	case contentTypeMultipartAlternative:
-		email.TextBody, email.HTMLBody, email.EmbeddedFiles, err = parseMultipartAlternative(msg.Body, params["boundary"])
-	case contentTypeTextPlain:
-		message, _ := ioutil.ReadAll(msg.Body)
-		email.TextBody = strings.TrimSuffix(string(message[:]), "\n")
-	case contentTypeTextHtml:
-		message, _ := ioutil.ReadAll(msg.Body)
-		email.HTMLBody = strings.TrimSuffix(string(message[:]), "\n")
-	default:
-		err = fmt.Errorf("Unknown top level mime type: %s", contentType)
-	}
-
+	body, _ := ioutil.ReadAll(msg.Body)
+	email.Body = string(body)
 	return
 }
 
 func createEmailFromHeader(header mail.Header) (email Email, err error) {
+	// todo: strip this down enormously, replace with anon funcs for email (mail.Subject, mail.To, etc)
 	hp := headerParser{header: &header}
 
 	email.Subject = decodeMimeSentence(header.Get("Subject"))
@@ -438,64 +421,15 @@ type EmbeddedFile struct {
 	Data        io.Reader
 }
 
-func commaSep(mails []*mail.Address) string {
-	var response []string
-	var sm string
-	for _, m := range mails {
-		sm = m.String()
-		response = append(response, sm)
-	}
-	return strings.Join(response, ",")
-}
-
 func (e *Email) ToBytes() []byte {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Sender: %s\r\n", e.Sender)
-	fmt.Fprintf(&buf, "From: %s\r\n", commaSep(e.From))
-	if len(e.To) > 0 {
-		fmt.Fprintf(&buf, "To: %s\r\n", commaSep(e.To))
+
+	// print the headers in whatever darn order, who cares
+	for k, v := range e.Header {
+		fmt.Fprintf(&buf, "%s: %s\r\n", k, strings.Join(v, " "))
 	}
-	if len(e.Cc) > 0 {
-		fmt.Fprintf(&buf, "Cc: %s\r\n", commaSep(e.Cc))
-	}
-	if !e.Date.IsZero() {
-		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date.Format(time.RFC1123Z))
-	}
-	if len(e.MessageID) > 0 {
-		fmt.Fprintf(&buf, "Message-Id: <%s>\r\n", e.MessageID)
-	}
-	if len(e.InReplyTo) > 0 {
-		fmt.Fprintf(&buf, "In-Reply-To: <%s>\r\n", strings.Join(e.InReplyTo, "> <"))
-	}
-	if len(e.References) > 0 {
-		fmt.Fprintf(&buf, "References: <%s>\r\n", strings.Join(e.References, "> <"))
-	}
-	if len(e.Header.Get("List-Id")) > 0 {
-		fmt.Fprintf(&buf, "List-Id: %s\r\n", e.Header.Get("List-Id"))
-	}
-	if len(e.Header.Get("List-Post")) > 0 {
-		fmt.Fprintf(&buf, "List-Post: %s\r\n", e.Header.Get("List-Post"))
-	}
-	if len(e.Header.Get("List-Help")) > 0 {
-		fmt.Fprintf(&buf, "List-Help: %s\r\n", e.Header.Get("List-Help"))
-	}
-	if len(e.Header.Get("List-Subscribe")) > 0 {
-		fmt.Fprintf(&buf, "List-Subscribe: %s\r\n", e.Header.Get("List-Subscribe"))
-	}
-	if len(e.Header.Get("List-Unsubscribe")) > 0 {
-		fmt.Fprintf(&buf, "List-Unsubscribe: %s\r\n", e.Header.Get("List-Unsubscribe"))
-	}
-	if len(e.Header.Get("List-Owner")) > 0 {
-		fmt.Fprintf(&buf, "List-Owner: %s\r\n", e.Header.Get("List-Owner"))
-	}
-	if len(e.Header.Get("Precedence")) > 0 {
-		fmt.Fprintf(&buf, "Precedence: %s\r\n", e.Header.Get("Precedence"))
-	}
-	if len(e.Header.Get("List-Archive")) > 0 {
-		fmt.Fprintf(&buf, "List-Archive: %s\r\n", e.Header.Get("List-Archive"))
-	}
-	fmt.Fprintf(&buf, "Subject: %s\r\n", e.Subject)
-	fmt.Fprintf(&buf, "\r\n%s", e.TextBody)
+
+	fmt.Fprintf(&buf, "\r\n%s", e.Body)
 
 	return buf.Bytes()
 }
@@ -524,8 +458,7 @@ type Email struct {
 	ResentBcc       []*mail.Address
 	ResentMessageID string
 
-	HTMLBody string
-	TextBody string
+	Body string
 
 	Attachments   []Attachment
 	EmbeddedFiles []EmbeddedFile

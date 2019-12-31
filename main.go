@@ -213,12 +213,10 @@ func handleShowLists(msg *parsemail.Email) {
 		}
 	}
 
-	log.Printf("SEND")
 	fmt.Fprintf(&body,
 		"\r\nTo subscribe to a mailing list, email %s with 'subscribe <list-id>' as the subject.\r\n",
 		gConfig.CommandAddress)
 
-	log.Printf("SEND")
 	email := buildCommandEmail(msg, body)
 	send(email)
 	log.Printf("LIST_SENT To=%q", msg.From)
@@ -298,19 +296,19 @@ func badAddress(recipient string, e *parsemail.Email) bool {
 
 func buildCommandEmail(e *parsemail.Email, t bytes.Buffer) *parsemail.Email {
 	response := parsemail.Email{}
-	response.Sender = &mail.Address{"", gConfig.CommandAddress}
-	from := &mail.Address{"clist", gConfig.CommandAddress}
-	response.From = []*mail.Address{from}
-	response.To = e.From
 	response.Bcc = e.From
-	response.Subject = "Re: " + e.Subject
+
 	header := make(map[string][]string)
+	header["Sender"] = []string{gConfig.CommandAddress}
+	header["From"] = []string{gConfig.CommandAddress}
+	header["To"] = []string{e.Header.Get("From")}
+	header["Subject"] = []string{"Re: " + e.Subject}
 	header["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
 	header["Precedence"] = []string{"list"}
 	header["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
 	response.Header = header
 	response.Bcc = e.From
-	response.TextBody = t.String()
+	response.Body = t.String()
 	log.Printf("%q", response)
 	return &response
 }
@@ -334,8 +332,8 @@ func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 	}
 
 	post := e
-	post.Sender = &mail.Address{l.Name, l.Address}
 	post.Bcc = recipients
+	post.Header["Sender"] = []string{l.Address}
 	post.Header["Return-Path"] = []string{"bounce-" + l.Address}
 	post.Header["Precedence"] = []string{"list"}
 	post.Header["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
@@ -356,7 +354,7 @@ func send(e *parsemail.Email) {
 	}
 
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, "mail.c3f.net")
-	err := smtp.SendMail("mail.c3f.net:587", auth, e.Sender.Address, recipients, e.ToBytes())
+	err := smtp.SendMail("mail.c3f.net:587", auth, e.Header.Get("Sender"), recipients, e.ToBytes())
 	if err != nil {
 		log.Printf("ERROR_SENDING_MAIL: Error=%q\n", err.Error())
 	}
