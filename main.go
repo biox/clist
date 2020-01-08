@@ -354,7 +354,7 @@ func send(e *parsemail.Email) {
 	}
 
 	auth := smtp.PlainAuth("", gConfig.SMTPUsername, gConfig.SMTPPassword, gConfig.SMTPHostname)
-	err := smtp.SendMail(gConfig.SMTPHostname + ":" + gConfig.SMTPPort, auth, e.Header.Get("Sender"), recipients, e.ToBytes())
+	err := smtp.SendMail(gConfig.SMTPHostname+":"+gConfig.SMTPPort, auth, e.Header.Get("Sender"), recipients, e.ToBytes())
 	if err != nil {
 		log.Printf("ERROR_SENDING_MAIL: Error=%q\n", err.Error())
 	}
