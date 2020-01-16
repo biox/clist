@@ -2,18 +2,22 @@ package parsemail
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"mime"
 	"net/mail"
 	"strings"
-	"time"
 )
 
 // Parse an email message read from io.Reader into parsemail.Email struct
 func Parse(r io.Reader) (email Email, err error) {
-	msg, err := mail.ReadMessage(r)
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return
+	}
+
+	reader := bytes.NewReader(b)
+	msg, err := mail.ReadMessage(reader)
 	if err != nil {
 		return
 	}
@@ -23,8 +27,7 @@ func Parse(r io.Reader) (email Email, err error) {
 		return
 	}
 
-	body, _ := ioutil.ReadAll(msg.Body)
-	email.Body = string(body)
+	email.Bytes = b
 	return
 }
 
@@ -39,17 +42,6 @@ func createEmailFromHeader(header mail.Header) (email Email, err error) {
 	email.To = hp.parseAddressList(header.Get("To"))
 	email.Cc = hp.parseAddressList(header.Get("Cc"))
 	email.Bcc = hp.parseAddressList(header.Get("Bcc"))
-	email.Date = hp.parseTime(header.Get("Date"))
-	email.ResentFrom = hp.parseAddressList(header.Get("Resent-From"))
-	email.ResentSender = hp.parseAddress(header.Get("Resent-Sender"))
-	email.ResentTo = hp.parseAddressList(header.Get("Resent-To"))
-	email.ResentCc = hp.parseAddressList(header.Get("Resent-Cc"))
-	email.ResentBcc = hp.parseAddressList(header.Get("Resent-Bcc"))
-	email.ResentMessageID = hp.parseMessageId(header.Get("Resent-Message-ID"))
-	email.MessageID = hp.parseMessageId(header.Get("Message-ID"))
-	email.InReplyTo = hp.parseMessageIdList(header.Get("In-Reply-To"))
-	email.References = hp.parseMessageIdList(header.Get("References"))
-	email.ResentDate = hp.parseTime(header.Get("Resent-Date"))
 
 	if hp.err != nil {
 		err = hp.err
@@ -135,53 +127,10 @@ func (hp headerParser) parseAddressList(s string) (ma []*mail.Address) {
 	return
 }
 
-func (hp headerParser) parseTime(s string) (t time.Time) {
-	if hp.err != nil || s == "" {
-		return
-	}
-
-	t, hp.err = time.Parse(time.RFC1123Z, s)
-	if hp.err == nil {
-		return t
-	}
-
-	t, hp.err = time.Parse("Mon, 2 Jan 2006 15:04:05 -0700", s)
-
-	return
-}
-
-func (hp headerParser) parseMessageId(s string) string {
-	if hp.err != nil {
-		return ""
-	}
-
-	return strings.Trim(s, "<> ")
-}
-
-func (hp headerParser) parseMessageIdList(s string) (result []string) {
-	if hp.err != nil {
-		return
-	}
-
-	for _, p := range strings.Split(s, " ") {
-		if strings.Trim(p, " \n") != "" {
-			result = append(result, hp.parseMessageId(p))
-		}
-	}
-
-	return
-}
-
 func (e *Email) ToBytes() []byte {
 	var buf bytes.Buffer
-
-	// print the headers in whatever darn order, who cares
-	for k, v := range e.Header {
-		fmt.Fprintf(&buf, "%s: %s\r\n", k, strings.Join(v, " "))
-	}
-
-	fmt.Fprintf(&buf, "\r\n%s", e.Body)
-
+	buf.Write(e.PrefixBytes)
+	buf.Write(e.Bytes)
 	return buf.Bytes()
 }
 
@@ -189,6 +138,7 @@ func (e *Email) ToBytes() []byte {
 type Email struct {
 	Header mail.Header
 
+	// read-only
 	Subject    string
 	Sender     *mail.Address
 	From       []*mail.Address
@@ -196,18 +146,8 @@ type Email struct {
 	To         []*mail.Address
 	Cc         []*mail.Address
 	Bcc        []*mail.Address
-	Date       time.Time
-	MessageID  string
-	InReplyTo  []string
-	References []string
 
-	ResentFrom      []*mail.Address
-	ResentSender    *mail.Address
-	ResentTo        []*mail.Address
-	ResentDate      time.Time
-	ResentCc        []*mail.Address
-	ResentBcc       []*mail.Address
-	ResentMessageID string
-
-	Body string
+	// read-write
+	PrefixBytes  []byte
+	Bytes        []byte // All bytes that can be replayed for a successful transmission
 }

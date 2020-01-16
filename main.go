@@ -6,9 +6,6 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"git.cyberia.club/cyberia-services/clist/mail"
-	_ "github.com/mattn/go-sqlite3"
-	"gopkg.in/ini.v1"
 	"io"
 	"log"
 	"net/mail"
@@ -17,6 +14,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	parsemail "git.cyberia.club/cyberia-services/clist/mail"
+	_ "github.com/mattn/go-sqlite3"
+	"gopkg.in/ini.v1"
 )
 
 type Config struct {
@@ -66,7 +67,7 @@ func main() {
 	if flag.Arg(0) == "message" {
 		msg, err := parsemail.Parse(bufio.NewReader(os.Stdin))
 		if err != nil {
-			log.Printf("ERROR_PARSING_MESSAGE mail=%q msg=%q error=%q\n", os.Stdin, msg, err.Error())
+			log.Printf("ERROR_PARSING_MESSAGE mail=%v msg=%q error=%q\n", os.Stdin, msg, err.Error())
 			os.Exit(0)
 		}
 		log.Printf("MESSAGE_RECEIVED From=%q To=%q Cc=%q Bcc=%q Subject=%q\n",
@@ -296,20 +297,17 @@ func badAddress(recipient string, e *parsemail.Email) bool {
 
 func buildCommandEmail(e *parsemail.Email, t bytes.Buffer) *parsemail.Email {
 	response := parsemail.Email{}
-	response.Bcc = e.From
+	response.Bcc = e.From // return to sender
 
-	header := make(map[string][]string)
-	header["Sender"] = []string{gConfig.CommandAddress}
-	header["From"] = []string{gConfig.CommandAddress}
-	header["To"] = []string{e.Header.Get("From")}
-	header["Subject"] = []string{"Re: " + e.Subject}
-	header["Date"] = []string{time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700")}
-	header["Precedence"] = []string{"list"}
-	header["List-Help"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=help>"}
-	response.Header = header
-	response.Bcc = e.From
-	response.Body = t.String()
-	log.Printf("%q", response)
+	mail := "Sender: " + gConfig.CommandAddress + "\r\n" +
+		"From: " + gConfig.CommandAddress + "\r\n" +
+		"To: " + e.Header.Get("From") + "\r\n" +
+		"Precedence: list\r\n" +
+		"Subject: Re: " + e.Subject + "\r\n" +
+		"Date: " + time.Now().Format("Mon, 2 Jan 2006 15:04:05 -0700") + "\r\n\r\n" +
+		t.String()
+
+	response.Bytes = []byte(mail)
 	return &response
 }
 
@@ -327,23 +325,27 @@ func buildListEmail(e *parsemail.Email, l *List) *parsemail.Email {
 	var recipients []*mail.Address
 	for _, subscriber := range fetchSubscribers(l.Id) {
 		if !badAddress(subscriber, e) {
-			recipients = append(recipients, &mail.Address{"", subscriber})
+			recipients = append(recipients, &mail.Address{Name: "", Address: subscriber})
 		}
 	}
+	email := e
+	email.Bcc = recipients
 
-	post := e
-	post.Bcc = recipients
-	post.Header["Sender"] = []string{l.Address}
-	post.Header["Return-Path"] = []string{"bounce-" + l.Address}
-	post.Header["Precedence"] = []string{"list"}
-	post.Header["List-Id"] = []string{"<" + strings.Replace(l.Address, "@", ".", -1) + ">"}
-	post.Header["List-Post"] = []string{"<mailto:" + l.Address + ">"}
-	post.Header["List-Help"] = []string{"<mailto:" + l.Address + "?subject=help>"}
-	post.Header["List-Subscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">"}
-	post.Header["List-Unsubscribe"] = []string{"<mailto:" + gConfig.CommandAddress + "?subject=unsubscribe%20" + l.Id + ">"}
-	post.Header["List-Archive"] = []string{"<" + l.Archive + ">"}
-	post.Header["List-Owner"] = []string{"<" + l.Owner + ">"}
-	return post
+	// Set extra headers
+	xtra := "Sender: " + l.Address + "\r\n" +
+		"Return-Path: bounce-" + l.Address + "\r\n" +
+		"Precedence: list\r\n" +
+		"List-Id: <" + strings.Replace(l.Address, "@", ".", -1) + ">\r\n" +
+		"List-Post: <mailto:" + l.Address + ">\r\n" +
+		"List-Subscribe: <mailto:" + gConfig.CommandAddress + "?subject=subscribe%20" + l.Id + ">\r\n" +
+		"List-Unsubscribe: <mailto:" + gConfig.CommandAddress + "?subject=unsubscribe%20" + l.Id + ">\r\n" +
+		"List-Help: <mailto:" + l.Address + "?subject=help>\r\n" +
+		"List-Archive: <" + l.Archive + ">\r\n" +
+		"List-Owner: <" + l.Owner + ">\r\n"
+
+	email.PrefixBytes = []byte(xtra)
+
+	return email
 }
 
 func send(e *parsemail.Email) {
